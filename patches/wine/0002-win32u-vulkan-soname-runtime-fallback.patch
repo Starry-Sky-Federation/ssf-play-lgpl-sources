@@ -1,0 +1,25 @@
+Subject: win32u: fall back to a runtime MoltenVK soname when Wine is configured --without-vulkan
+Origin: written for SSF Play (not from upstream).
+Date-of-change: 2026-07-30
+Files: dlls/win32u/vulkan.c
+Change: dlls/win32u/vulkan.c references SONAME_LIBVULKAN unconditionally and fails to compile with --without-vulkan.
+        Define a default ("libMoltenVK.dylib"); if the dlopen fails at run time Vulkan is simply unavailable.
+        The distributed runtime does not ship MoltenVK, so Vulkan stays off.
+License: LGPL-2.1-or-later, same as Wine.
+---
+
+--- a/dlls/win32u/vulkan.c
++++ b/dlls/win32u/vulkan.c
+@@ -2993,6 +2993,12 @@
+     .p_map_instance_extensions = lazydrv_map_instance_extensions,
+     .p_map_device_extensions = lazydrv_map_device_extensions,
+ };
++
++/* built --without-vulkan: no compile-time soname; probe MoltenVK at runtime,
++ * dlopen failure below already degrades gracefully (vulkan just unavailable) */
++#ifndef SONAME_LIBVULKAN
++#define SONAME_LIBVULKAN "libMoltenVK.dylib"
++#endif
+ 
+ static void vulkan_init_once(void)
+ {

@@ -1,0 +1,48 @@
+Subject: winemac.drv: debug switch to keep OpenGL client views hidden
+Origin: written for SSF Play (not from upstream). Marked "ssfplay-patch" in the source comments.
+Date-of-change: 2026-07-30
+Files: dlls/winemac.drv/window.c
+Change: with MACDRV_HIDE_GL_CLIENT_VIEWS=1 the GL client view stays hidden. This is a diagnostic switch that was used
+        to investigate the black Steam client window on macOS 27; it must never be set when a game runs
+        (the launcher unsets it). Without the variable the behaviour is unchanged.
+License: LGPL-2.1-or-later, same as Wine.
+---
+
+--- a/dlls/winemac.drv/window.c
++++ b/dlls/winemac.drv/window.c
+@@ -1188,6 +1188,22 @@
+     macdrv_set_view_frame(surface->cocoa_view, cgrect_from_rect(rect));
+     macdrv_set_view_superview(surface->cocoa_view, toplevel == hwnd ? NULL : data->client_view, data->cocoa_window, NULL, NULL);
+     release_win_data(data);
++}
++
++/* ssfplay-patch: on layer-backed views the GL / client view is the topmost sublayer and always covers the
++ * content view's own layer.contents (the GDI window surface); kCGLCPSurfaceOrder from OpenGLSurfaceMode
++ * is a no-op on current macOS. An application that presents one frame at SetPixelFormat time and then
++ * draws its UI with GDI / child windows (the Steam client) ends up all black. MACDRV_HIDE_GL_CLIENT_VIEWS=1
++ * keeps the client view hidden so the window shows its GDI content again. Diagnostic switch only. */
++static BOOL hide_gl_client_views(void)
++{
++    static int cached = -1;
++    if (cached == -1)
++    {
++        const char *e = getenv("MACDRV_HIDE_GL_CLIENT_VIEWS");
++        cached = (e && *e != '0');
++    }
++    return cached;
+ }
+ 
+ static void macdrv_client_surface_present(struct client_surface *client, HDC hdc)
+@@ -1196,6 +1212,12 @@
+     struct macdrv_win_data *data;
+ 
+     TRACE("%s\n", debugstr_client_surface(client));
++
++    if (hide_gl_client_views())
++    {
++        TRACE("ssfplay-patch: keeping the client view hidden (MACDRV_HIDE_GL_CLIENT_VIEWS)\n");
++        return;
++    }
+ 
+     if (!(data = get_win_data(surface->client.hwnd))) return;
+     if (data->client_view != surface->cocoa_view)

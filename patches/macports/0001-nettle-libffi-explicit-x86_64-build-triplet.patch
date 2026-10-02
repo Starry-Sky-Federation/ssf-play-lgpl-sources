@@ -1,0 +1,40 @@
+Subject: nettle, libffi: pass an explicit x86_64 build triplet when build_arch is x86_64 on an arm64 host
+Origin: written for SSF Play (not from upstream MacPorts).
+Date-of-change: 2026-07-30
+Files: devel/libffi/Portfile, devel/nettle/Portfile
+Change: config.guess in both ports only looks at uname and picks aarch64 sources / ARM assembly on an Apple Silicon
+        host even when MacPorts builds for x86_64. Give --build=x86_64-apple-darwin${os.major} explicitly.
+License: BSD-3-Clause, same as the MacPorts Portfiles it changes.
+---
+
+diff --git a/devel/libffi/Portfile b/devel/libffi/Portfile
+index 0ea9be02..7bf8325f 100644
+--- a/devel/libffi/Portfile
++++ b/devel/libffi/Portfile
+@@ -75,6 +75,12 @@ array set merger_host {
+     ppc64 powerpc-apple-darwin
+ }
+ 
++# ssfplay-patch: config.guess in libffi 3.4.8 only looks at uname; -arch in CC cannot correct the
++# triplet, so build_arch=x86_64 on an arm64 host needs an explicit --build (same convention as the nettle fix)
++if {![variant_isset universal] && ${build_arch} eq "x86_64"} {
++    configure.args-append --build=x86_64-apple-darwin${os.major}
++}
++
+ lappend merger_dont_diff \
+     ${prefix}/include/ffi.h \
+     ${prefix}/include/ffitarget.h
+diff --git a/devel/nettle/Portfile b/devel/nettle/Portfile
+index 7a866d0c..dc976ab2 100644
+--- a/devel/nettle/Portfile
++++ b/devel/nettle/Portfile
+@@ -59,6 +59,9 @@ configure.args      --disable-openssl \
+ # aes-decrypt-internal.s:77:6: error: invalid operand for instruction
+ # etc.
+ set merger_configure_args(arm64) --build=aarch64-apple-darwin${os.major}
++# ssfplay-patch: the reverse case: with build_arch=x86_64 on an arm64 host the uname probe picks ARM assembly,
++# so the x86_64 triplet has to be given explicitly (same convention as the arm64 line above)
++set merger_configure_args(x86_64) --build=x86_64-apple-darwin${os.major}
+ 
+ if {(!${universal_possible} || ![variant_isset universal]) && [info exists merger_configure_args(${build_arch})]} {
+     configure.args-append $merger_configure_args(${build_arch})

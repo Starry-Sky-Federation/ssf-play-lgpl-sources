@@ -1,0 +1,3 @@
+# Build output: the scripts write below the work directory
+work/
+.DS_Store

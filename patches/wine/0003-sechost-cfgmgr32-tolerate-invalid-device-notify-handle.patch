@@ -1,0 +1,154 @@
+Subject: sechost, cfgmgr32: tolerate invalid device-notification handles instead of crashing
+Origin: backport written for SSF Play, following the approach of upstream Wine 11.7 (commits d8aa0ab, f38f3ac)
+        and Wine 11.8 (commit a0236b6). Marked "ssfplay-backport" in the source comments.
+Date-of-change: 2026-07-31
+Files: dlls/sechost/service.c, dlls/cfgmgr32/main.c
+Change: Steam passes stale or invalid HDEVNOTIFY / HCMNOTIFICATION handles on exit. The original code dereferenced
+        them as list entries and wrote through a wild pointer (crash when quitting CS2 / TF2). Add a magic-number
+        check and a page-fault guard, as real Windows tolerates these handles.
+License: LGPL-2.1-or-later, same as Wine.
+---
+
+--- a/dlls/sechost/service.c
++++ b/dlls/sechost/service.c
+@@ -1979,8 +1979,14 @@
+ static HANDLE device_notify_thread;
+ static struct list device_notify_list = LIST_INIT(device_notify_list);
+ 
++/* ssfplay-backport (wine 11.7: d8aa0ab + f38f3ac): on exit Steam passes invalid or stale
++ * HDEVNOTIFY handles. Real Windows tolerates them; unlinking them as list entries here
++ * writes through a wild pointer (crash when quitting CS2 / TF2). Add a magic check and a page-fault guard. */
++#define DEVICE_NOTIFY_MAGIC 0xdecafbad
++
+ struct device_notify
+ {
++    DWORD magic;
+     struct list entry;
+     WCHAR *path;
+     HANDLE handle;
+@@ -1995,6 +2001,7 @@
+     struct device_notify *event;
+ 
+     if (!(event = calloc( 1, sizeof(*event) + header->dbch_size ))) return NULL;
++    event->magic = DEVICE_NOTIFY_MAGIC;
+     event->handle = notify->handle;
+     event->callback = notify->callback;
+     memcpy( event->header, header, header->dbch_size );
+@@ -2143,6 +2150,7 @@
+         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+         return NULL;
+     }
++    notify->magic = DEVICE_NOTIFY_MAGIC;
+     notify->handle = handle;
+     notify->callback = callback;
+     memcpy( notify->header, filter, filter->dbch_size );
+@@ -2183,6 +2191,7 @@
+ BOOL WINAPI I_ScUnregisterDeviceNotification( HDEVNOTIFY handle )
+ {
+     struct device_notify *notify = handle;
++    BOOL ret = TRUE;
+ 
+     TRACE("%p\n", handle);
+ 
+@@ -2190,8 +2199,34 @@
+         return FALSE;
+ 
+     EnterCriticalSection( &service_cs );
+-    list_remove( &notify->entry );
++    /* ssfplay-backport: the handle may be invalid or stale (Steam does this on exit);
++     * check the magic first and guard against page faults instead of writing through a wild pointer. */
++    __TRY
++    {
++        if (notify->magic != DEVICE_NOTIFY_MAGIC)
++        {
++            WARN( "got invalid handle %p\n", handle );
++            SetLastError( ERROR_INVALID_HANDLE );
++            ret = FALSE;
++        }
++        else
++        {
++            notify->magic = 0;
++            list_remove( &notify->entry );
++        }
++    }
++    __EXCEPT_PAGE_FAULT
++    {
++        WARN( "page fault on handle %p\n", handle );
++        SetLastError( ERROR_SERVICE_SPECIFIC_ERROR );
++        ret = FALSE;
++    }
++    __ENDTRY
+     LeaveCriticalSection(&service_cs);
++
++    if (!ret)
++        return FALSE;
++
+     free( notify->path );
+     free( notify );
+     return TRUE;
+--- a/dlls/cfgmgr32/main.c
++++ b/dlls/cfgmgr32/main.c
+@@ -20,6 +20,7 @@
+ #include <assert.h>
+ 
+ #include "wine/debug.h"
++#include "wine/exception.h"
+ #include "wine/rbtree.h"
+ #include "winreg.h"
+ #include "winternl.h"
+@@ -72,8 +73,13 @@
+     return default_error;
+ }
+ 
++/* ssfplay-backport (wine 11.8: a0236b6): same as sechost, the handle may be invalid and real Windows tolerates it.
++ * Upstream made this change in the split-out notification.c; this tree is not split yet, so it is adapted in place. */
++#define CM_NOTIFY_CONTEXT_MAGIC 0xbeef4dad
++
+ struct cm_notify_context
+ {
++    DWORD magic;
+     HDEVNOTIFY notify;
+     void *user_data;
+     PCM_NOTIFY_CALLBACK callback;
+@@ -207,6 +213,7 @@
+ 
+     if (!(ctx = calloc( 1, sizeof(*ctx) ))) return CR_OUT_OF_MEMORY;
+ 
++    ctx->magic = CM_NOTIFY_CONTEXT_MAGIC;
+     ctx->user_data = user_data;
+     ctx->callback = callback;
+     if (!(ctx->notify = I_ScRegisterDeviceNotification( ctx, &notify_filter.header, devnotify_callback )))
+@@ -243,12 +250,32 @@
+ CONFIGRET WINAPI CM_Unregister_Notification( HCMNOTIFICATION notify )
+ {
+     struct cm_notify_context *ctx = notify;
++    HDEVNOTIFY dev_notify;
+ 
+     TRACE( "(%p)\n", notify );
+ 
+     if (!notify) return CR_INVALID_DATA;
+ 
+-    I_ScUnregisterDeviceNotification( ctx->notify );
++    /* ssfplay-backport: the handle may be invalid or stale (Steam passes such handles on exit);
++     * check the magic and guard against page faults instead of dereferencing a wild pointer. */
++    __TRY
++    {
++        if (ctx->magic != CM_NOTIFY_CONTEXT_MAGIC)
++        {
++            WARN( "got invalid handle %p\n", notify );
++            return CR_INVALID_DATA;
++        }
++        ctx->magic = 0;
++        dev_notify = ctx->notify;
++    }
++    __EXCEPT_PAGE_FAULT
++    {
++        WARN( "page fault on handle %p\n", notify );
++        return CR_FAILURE;
++    }
++    __ENDTRY
++
++    I_ScUnregisterDeviceNotification( dev_notify );
+     free( ctx );
+ 
+     return CR_SUCCESS;

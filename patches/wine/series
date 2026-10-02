@@ -1,0 +1,6 @@
+0001-upstream-llvm-mingw-and-syscall-abi-fixes-cx26.3.patch
+0002-win32u-vulkan-soname-runtime-fallback.patch
+0003-sechost-cfgmgr32-tolerate-invalid-device-notify-handle.patch
+0004-winemac-hide-gl-client-views-debug-switch.patch
+0005-ntdll-keep-no-exec-on-under-rosetta.patch
+0006-ntdll-rosetta-x87-sidecar-cooperative-attach.patch
