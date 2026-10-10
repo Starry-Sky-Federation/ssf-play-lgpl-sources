@@ -1,4 +1,4 @@
-SSF Play 1.0.0: patches and build scripts of the LGPL components
+SSF Play 1.1.0: patches and build scripts of the LGPL components
 
 The SSF Play runtime contains Wine and DXMT, both under the GNU Lesser General Public License, version 2.1
 or later, and several libraries under the LGPL that are built with MacPorts. This archive holds what
@@ -21,7 +21,7 @@ The upstream sources, in the same place as this archive:
 The source archives of the MacPorts libraries are named, with sha256 and download addresses, in
 share/licenses/BUNDLED-PORTS.txt of every runtime, next to the commits of the ports trees that they were
 built from. The files of this archive are also at
-  https://github.com/Starry-Sky-Federation/ssf-play-lgpl-sources   (tag v1.0.0)
+  https://github.com/Starry-Sky-Federation/ssf-play-lgpl-sources   (tag v1.1.0)
 
 Building
   You need an Apple Silicon Mac with Rosetta 2, a full Xcode with its Metal toolchain, and meson, ninja and
